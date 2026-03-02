@@ -18,7 +18,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 
-from app.clients import nvidia_rag_http as rag_client
 from app.config import settings
 from app.schemas import (
     ChecklistRequest,
@@ -171,6 +170,11 @@ class AgentState(TypedDict, total=False):
 
 async def rag_search_node(state: AgentState) -> AgentState:
     """Always search RAG first."""
+    if settings.backend == "local":
+        from app.clients import local_chroma as rag_client
+    else:
+        from app.clients import nvidia_rag_http as rag_client
+
     query = state.get("query", "")
     collection = state.get("collection", "") or settings.rag_collection
     top_k = state.get("top_k", 8)
