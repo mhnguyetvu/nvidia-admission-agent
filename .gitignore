@@ -6,3 +6,7 @@ dist/
 build/
 .venv/
 .uv/
+chroma_data/
+*.db
+*.sqlite3
+.DS_Store

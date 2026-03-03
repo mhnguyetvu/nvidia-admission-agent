@@ -1,8 +1,14 @@
 # 🎓 Admission Agent
 
-Agentic RAG chatbot for university admissions **(Fall 2026-2027)** powered by local ChromaDB.
+Agentic RAG chatbot for university admissions **(Fall 2026-2027)** powered by **VNPay GenAI** and local ChromaDB.
 
-The application uses **local ChromaDB** for document retrieval and embeddings — no external servers required.
+The application uses:
+- **VNPay GLM 4.5 Air 110B** for LLM generation (Vietnamese + English support)
+- **VNPay BGE m3** for semantic embeddings
+- **Local ChromaDB** for vector storage and retrieval
+- **FastAPI** for REST API
+- **LangGraph** for agent workflows
+- **Simple HTML chatbot UI** for interactive Q&A
 
 ---
 
@@ -70,17 +76,33 @@ python scripts/ingest_docs.py --dry-run
 ### 5. Run the server
 
 ```bash
-uvicorn app.main:app --reload --port 9000
+python -m uvicorn app.main:app --port 7777 --host 0.0.0.0
 ```
 
-### 6. Health check
+### 6. Open the chatbot UI (optional)
+
+Serve the chatbot interface:
+
+```bash
+python -m http.server 8080
+```
+
+Then open in your browser: **http://localhost:8080/chatbot.html**
+
+The chatbot will:
+- ✅ Respond in **Vietnamese** by default
+- 🔍 Search your ingested PDFs with semantic embeddings
+- 💬 Generate contextual answers using VNPay GLM 4.5 Air
+- 📚 Show source citations with relevance scores
+
+### 7. Health check
 
 ```bash
 # CLI
 python scripts/healthcheck.py
 
 # HTTP
-curl http://localhost:9000/health
+curl http://localhost:7777/health
 ```
 
 ---
@@ -92,7 +114,7 @@ curl http://localhost:9000/health
 Return matching chunks with relevance scores from ChromaDB.
 
 ```bash
-curl -X POST http://localhost:9000/api/v1/search \
+curl -X POST http://localhost:7777/api/v1/search \
   -H "Content-Type: application/json" \
   -d '{
     "query": "USC PhD CS admission requirements",
@@ -102,13 +124,22 @@ curl -X POST http://localhost:9000/api/v1/search \
 
 ### `POST /api/v1/chat/query`
 
-Grounded Q&A using ChromaDB retrieval + LLM generation.
+Grounded Q&A using ChromaDB retrieval + VNPay GLM 4.5 Air LLM generation.
+
+**Responds in Vietnamese by default** based on ingested documents.
 
 ```bash
-curl -X POST http://localhost:9000/api/v1/chat/query \
+curl -X POST http://localhost:7777/api/v1/chat/query \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "What GRE score does MIT require for MS AI?"
+    "query": "Yêu cầu tuyển sinh là gì?"
+  }'
+
+# Or in English:
+curl -X POST http://localhost:7777/api/v1/chat/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What are the admission requirements?"
   }'
 ```
 
@@ -117,10 +148,10 @@ curl -X POST http://localhost:9000/api/v1/chat/query \
 Upload a single file for ingestion into ChromaDB.
 
 ```bash
-curl -X POST http://localhost:9000/api/v1/ingest/file \
-  -F "file=@data/docs/USC/PhD_CS/Fall_2026/admission.pdf" \
-  -F "university=USC" \
-  -F "program=PhD_CS" \
+curl -X POST http://localhost:7777/api/v1/ingest/file \
+  -F "file=@data/docs/SNU/MS_ML/Fall_2026/admission.pdf" \
+  -F "university=SNU" \
+  -F "program=MS_ML" \
   -F "term=Fall_2026"
 ```
 
@@ -129,7 +160,7 @@ curl -X POST http://localhost:9000/api/v1/ingest/file \
 Generate a structured admissions checklist (requires `LLM_API_KEY`).
 
 ```bash
-curl -X POST http://localhost:9000/api/v1/agent/checklist \
+curl -X POST http://localhost:7777/api/v1/agent/checklist \
   -H "Content-Type: application/json" \
   -d '{
     "university": "USC",
@@ -163,7 +194,7 @@ Draft an email to a professor or admissions office (requires `LLM_API_KEY`).
 **Professor email:**
 
 ```bash
-curl -X POST http://localhost:9000/api/v1/agent/email \
+curl -X POST http://localhost:7777/api/v1/agent/email \
   -H "Content-Type: application/json" \
   -d '{
     "recipient_type": "professor",
@@ -180,7 +211,7 @@ curl -X POST http://localhost:9000/api/v1/agent/email \
 **Admission email:**
 
 ```bash
-curl -X POST http://localhost:9000/api/v1/agent/email \
+curl -X POST http://localhost:7777/api/v1/agent/email \
   -H "Content-Type: application/json" \
   -d '{
     "recipient_type": "admission",
@@ -274,17 +305,19 @@ docker run --rm -it \
 
 All settings live in `.env` (see `.env.example`):
 
-| Variable               | Default                              | Description                          |
-|------------------------|--------------------------------------|--------------------------------------|
-| `RAG_COLLECTION`       | `admissions_fall_2026`               | ChromaDB collection name             |
-| `CHROMA_DIR`           | `./chroma_data`                      | Local ChromaDB storage directory     |
-| `EMBEDDING_MODEL`      | `all-MiniLM-L6-v2`                  | Sentence-transformers embedding model|
-| `CHUNK_SIZE`           | `500`                                | Text chunk size in characters        |
-| `CHUNK_OVERLAP`        | `50`                                 | Character overlap between chunks     |
-| `LLM_BASE_URL`         | `https://integrate.api.nvidia.com/v1`| OpenAI-compatible LLM endpoint       |
-| `LLM_API_KEY`          | *(empty)*                            | API key for agent LLM calls          |
-| `LLM_MODEL`            | `meta/llama-3.1-70b-instruct`       | Model name                           |
-| `REQUEST_TIMEOUT`      | `60`                                 | HTTP timeout in seconds              |
+| Variable               | Default                                          | Description                          |
+|------------------------|--------------------------------------------------|--------------------------------------|
+| `RAG_COLLECTION`       | `admissions_fall_2026`                           | ChromaDB collection name             |
+| `CHROMA_DIR`           | `./chroma_data`                                  | Local ChromaDB storage directory     |
+| `EMBEDDING_MODEL`      | `v_search`                                       | VNPay BGE m3 embedding model         |
+| `EMBEDDING_BASE_URL`   | `https://genai.vnpay.vn/aigateway/embed/v1/embeddings` | VNPay embedding API endpoint  |
+| `EMBEDDING_API_KEY`    | *(required)*                                     | VNPay JWT bearer token               |
+| `CHUNK_SIZE`           | `500`                                            | Text chunk size in characters        |
+| `CHUNK_OVERLAP`        | `50`                                             | Character overlap between chunks     |
+| `LLM_BASE_URL`         | `https://genai.vnpay.vn/aigateway/llm_glm_air/v1`| VNPay GLM 4.5 Air endpoint          |
+| `LLM_API_KEY`          | *(required)*                                     | VNPay JWT bearer token               |
+| `LLM_MODEL`            | `v_air45`                                        | GLM 4.5 Air 110B model               |
+| `REQUEST_TIMEOUT`      | `60`                                             | HTTP timeout in seconds              |
 
 ---
 
