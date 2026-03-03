@@ -36,76 +36,134 @@ The application uses:
 
 ## Quick Start
 
-### 1. Clone & configure
+### 1. Clone the repository
 
 ```bash
-git clone <repo-url> && cd admission-agent
+git clone https://github.com/<your-username>/nvidia-admission-agent.git
+cd nvidia-admission-agent
+```
+
+### 2. Set up your VNPay API credentials
+
+```bash
 cp .env.example .env
-# Edit .env — set LLM_API_KEY for agent features (optional)
 ```
 
-### 2. Install dependencies (uv recommended)
+Edit `.env` and replace `<your-vnpay-jwt-token>` with your actual VNPay GenAI JWT token:
 
 ```bash
-uv sync          # or: pip install -e .
+# Get your token from: https://genai.vnpay.vn
+LLM_API_KEY=Bearer eyJhbGciOiJIUzI1NiJ9...
+EMBEDDING_API_KEY=Bearer eyJhbGciOiJIUzI1NiJ9...
 ```
 
-### 3. Add your documents
+### 3. Install dependencies
 
-Place PDF/Markdown files under `data/docs/` following the convention:
+Create a conda environment (recommended) or Python virtual environment:
 
+```bash
+# Option A: Conda (recommended)
+conda create -n admission-agent python=3.10 -y
+conda activate admission-agent
+pip install -e .
+
+# Option B: venv
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -e .
 ```
-data/docs/<university>/<program>/<term>/<file>.pdf
+
+### 4. Add your PDF documents
+
+Place your admission-related PDFs in the `data/docs/` folder. You can organize by university/program/term:
+
+```bash
+# Create folders (optional structure)
+mkdir -p data/docs/MyUniversity/MyProgram/Fall_2026
+
+# Add your PDFs
+cp /path/to/your/admission_guide.pdf data/docs/MyUniversity/MyProgram/Fall_2026/
 ```
 
-Example:
-
+**Flexible structure** - any of these work:
 ```
-data/docs/USC/PhD_CS/Fall_2026/admission.pdf
-data/docs/MIT/MS_AI/Fall_2026/requirements.md
+data/docs/admission.pdf                                    ✅ Simple
+data/docs/SNU/MS_ML/Fall_2026/requirements.pdf            ✅ Organized
+data/docs/university_docs/program_info.pdf                ✅ Custom
 ```
 
-### 4. Ingest documents
+### 5. Ingest your documents
+
+This will extract text, chunk it, and create vector embeddings using VNPay BGE m3:
 
 ```bash
 python scripts/ingest_docs.py
-# Preview only:
-python scripts/ingest_docs.py --dry-run
 ```
 
-### 5. Run the server
+You should see output like:
+```
+Backend: Local ChromaDB
+Found 1 file(s) under .../data/docs
+Target collection: admissions_fall_2026
+OK  MyUniversity/MyProgram/Fall_2026/admission.pdf  (263 chunks)
+Done. 1 succeeded, 0 failed.
+```
+
+### 6. Start the FastAPI server
 
 ```bash
 python -m uvicorn app.main:app --port 7777 --host 0.0.0.0
 ```
 
-### 6. Open the chatbot UI (optional)
+Wait for:
+```
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:7777
+```
 
-Serve the chatbot interface:
+### 7. Open the chatbot UI
+
+**In a NEW terminal** (keep the server running), start the web server:
 
 ```bash
+cd nvidia-admission-agent  # if not already there
 python -m http.server 8080
 ```
 
-Then open in your browser: **http://localhost:8080/chatbot.html**
+Then open your browser to: **http://localhost:8080/chatbot.html**
+
+**Try asking** (in Vietnamese or English):
+- "Yêu cầu tuyển sinh là gì?"
+- "What are the admission requirements?"
+- "Hạn nộp đơn là khi nào?"
+- "What documents do I need?"
 
 The chatbot will:
-- ✅ Respond in **Vietnamese** by default
+- ✅ Respond in **Vietnamese** by default (bilingual support)
 - 🔍 Search your ingested PDFs with semantic embeddings
 - 💬 Generate contextual answers using VNPay GLM 4.5 Air
 - 📚 Show source citations with relevance scores
 
-### 7. Health check
+### 8. (Optional) Test via API
 
 ```bash
-# CLI
-python scripts/healthcheck.py
-
-# HTTP
+# Health check
 curl http://localhost:7777/health
+
+# Chat query
+curl -X POST http://localhost:7777/api/v1/chat/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What are the requirements?"}' | jq
 ```
 
 ---
+
+## 🎉 That's it! You now have a working chatbot on your own documents.
+
+To add more PDFs later:
+1. Drop new PDFs into `data/docs/`
+2. Run `python scripts/ingest_docs.py` again
+3. Refresh your browser - new documents are instantly searchable!
 
 ## API Reference
 
