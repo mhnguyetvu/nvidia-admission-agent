@@ -10,30 +10,19 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application settings loaded from environment / .env file."""
 
-    # ── Backend mode ───────────────────────────────────────────
-    backend: Literal["local", "nvidia"] = "local"
-
-    # ── NVIDIA RAG Blueprint (only used when backend=nvidia) ───
-    rag_url: str = "http://localhost:8081"
-    ingest_url: str = "http://localhost:8082"
-
-    rag_search_path: str = "/search"
-    rag_generate_path: str = "/generate"
-    ingest_documents_path: str = "/documents"
-
-    # ── Shared RAG settings ────────────────────────────────────
+    # ── Local ChromaDB settings ────────────────────────────────
     rag_collection: str = "admissions_fall_2026"
-
-    # ── Local mode settings ────────────────────────────────────
     chroma_dir: str = "./chroma_data"
-    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_model: str = "v_search"  # BGE m3 from VNPay
+    embedding_base_url: str = "https://genai.vnpay.vn/aigateway/embed/v1/embeddings"
+    embedding_api_key: str = ""
     chunk_size: int = 500
     chunk_overlap: int = 50
 
     # ── LLM (OpenAI-compatible) ────────────────────────────────
-    llm_base_url: str = "https://integrate.api.nvidia.com/v1"
+    llm_base_url: str = "https://genai.vnpay.vn/aigateway/llm_glm_air/v1"
     llm_api_key: str = ""
-    llm_model: str = "meta/llama-3.1-70b-instruct"
+    llm_model: str = "v_air45"  # GLM 4.5 Air 110B
 
     # ── General ────────────────────────────────────────────────
     app_host: str = "0.0.0.0"

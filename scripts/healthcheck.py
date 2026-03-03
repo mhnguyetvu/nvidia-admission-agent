@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Quick health-check for upstream NVIDIA RAG + Ingestor servers.
+"""Quick health-check for local ChromaDB backend.
 
 Usage:
     python scripts/healthcheck.py
@@ -13,29 +13,28 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.clients.nvidia_rag_http import healthcheck_ingest, healthcheck_rag  # noqa: E402
+from app.clients.local_chroma import healthcheck_ingest, healthcheck_rag  # noqa: E402
 from app.config import settings  # noqa: E402
 
 
 async def main() -> None:
-    print("NVIDIA Admission Agent — Health Check")
+    print("Admission Agent — Health Check")
     print("=" * 50)
-    print(f"RAG server URL   : {settings.rag_url}")
-    print(f"Ingest server URL: {settings.ingest_url}")
+    print(f"ChromaDB dir: {settings.chroma_dir}")
     print(f"LLM configured   : {'Yes' if settings.llm_api_key else 'No'}")
     print()
 
     rag = await healthcheck_rag()
     ingest = await healthcheck_ingest()
 
-    print(f"RAG server   : {rag}")
-    print(f"Ingest server: {ingest}")
+    print(f"ChromaDB RAG   : {rag}")
+    print(f"ChromaDB Ingest: {ingest}")
 
     if "unreachable" in str(rag) or "unreachable" in str(ingest):
-        print("\n⚠  One or more upstream servers are unreachable.")
+        print("\n⚠  ChromaDB backend is not accessible.")
         sys.exit(1)
     else:
-        print("\n✔  All upstream servers are reachable.")
+        print("\n✔  ChromaDB backend is healthy.")
 
 
 if __name__ == "__main__":

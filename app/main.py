@@ -43,23 +43,16 @@ app.include_router(api_router)
 
 @app.on_event("startup")
 async def startup_log() -> None:
-    logger.info("Backend mode: %s", settings.backend)
-    if settings.backend == "local":
-        logger.info("ChromaDB dir: %s", settings.chroma_dir)
-        logger.info("Embedding model: %s", settings.embedding_model)
-    else:
-        logger.info("RAG URL: %s", settings.rag_url)
-        logger.info("Ingest URL: %s", settings.ingest_url)
+    logger.info("Local ChromaDB backend initialised")
+    logger.info("ChromaDB dir: %s", settings.chroma_dir)
+    logger.info("Embedding model: %s", settings.embedding_model)
     logger.info("LLM configured: %s", bool(settings.llm_api_key))
 
 
 @app.get("/health")
 async def health() -> dict:
-    """Quick health check — pings the active backend."""
-    if settings.backend == "local":
-        from app.clients import local_chroma as client
-    else:
-        from app.clients import nvidia_rag_http as client
+    """Quick health check — verifies ChromaDB backend."""
+    from app.clients import local_chroma as client
 
     rag = await client.healthcheck_rag()
     ingest = await client.healthcheck_ingest()
@@ -67,7 +60,7 @@ async def health() -> dict:
 
     return {
         "status": "ok",
-        "backend": settings.backend,
+        "backend": "local",
         "rag": rag,
         "ingest": ingest,
         "llm_configured": llm_configured,

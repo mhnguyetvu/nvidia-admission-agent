@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir --prefix=/install .
 FROM python:3.12-slim AS runtime
 
 LABEL maintainer="you@example.com"
-LABEL description="NVIDIA Admission Agent — Agentic RAG gateway for university admissions"
+LABEL description="Admission Agent — Agentic RAG gateway for university admissions (Local ChromaDB)"
 
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
@@ -42,9 +42,7 @@ USER appuser
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     APP_HOST=0.0.0.0 \
-    APP_PORT=9000 \
-    RAG_URL=http://rag-server:8081 \
-    INGEST_URL=http://ingestor-server:8082
+    APP_PORT=9000
 
 EXPOSE 9000
 

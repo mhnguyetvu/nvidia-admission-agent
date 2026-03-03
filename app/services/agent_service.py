@@ -170,10 +170,7 @@ class AgentState(TypedDict, total=False):
 
 async def rag_search_node(state: AgentState) -> AgentState:
     """Always search RAG first."""
-    if settings.backend == "local":
-        from app.clients import local_chroma as rag_client
-    else:
-        from app.clients import nvidia_rag_http as rag_client
+    from app.clients import local_chroma as rag_client
 
     query = state.get("query", "")
     collection = state.get("collection", "") or settings.rag_collection

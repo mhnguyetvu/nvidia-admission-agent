@@ -1,7 +1,7 @@
-"""Local RAG backend using ChromaDB + sentence-transformers + PyMuPDF.
+"""Local RAG backend using ChromaDB + VNPay BGE m3 Embedding + PyMuPDF.
 
-Drop-in replacement for nvidia_rag_http.py — same function signatures
-so rag_service.py can swap backends transparently.
+Drop-in replacement for nvidia_rag_http.py — same function signatures.
+Uses VNPay embedding API (BGE m3) for vector generation.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from typing import Any
 
 import chromadb
 import fitz  # PyMuPDF
-from sentence_transformers import SentenceTransformer
+import httpx
 
 from app.config import settings
 
@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 # ── Lazy singletons ───────────────────────────────────────────────
 
 _chroma_client: chromadb.ClientAPI | None = None
-_embed_model: SentenceTransformer | None = None
 
 
 def _get_chroma() -> chromadb.ClientAPI:
@@ -37,22 +36,62 @@ def _get_chroma() -> chromadb.ClientAPI:
     return _chroma_client
 
 
-def _get_embed_model() -> SentenceTransformer:
-    global _embed_model
-    if _embed_model is None:
-        logger.info("Loading embedding model: %s …", settings.embedding_model)
-        _embed_model = SentenceTransformer(settings.embedding_model)
-        logger.info("Embedding model loaded.")
-    return _embed_model
+async def _embed_texts(texts: list[str]) -> list[list[float]]:
+    """Call VNPay BGE m3 embedding API."""
+    url = settings.embedding_base_url
+    headers = {
+        "Authorization": f"Bearer {settings.embedding_api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": settings.embedding_model,
+        "input": texts,
+    }
+    
+    logger.debug("Calling embedding API for %d texts", len(texts))
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            # Extract embeddings from response
+            embeddings = [item["embedding"] for item in data["data"]]
+            return embeddings
+    except Exception as exc:
+        logger.error("Embedding API error: %s", exc)
+        raise
 
 
 def _get_collection(name: str = "") -> chromadb.Collection:
     col_name = name or settings.rag_collection
-    model = _get_embed_model()
 
     class _EmbFn(chromadb.EmbeddingFunction):
+        """Sync wrapper for async VNPay embedding API."""
         def __call__(self, input: list[str]) -> list[list[float]]:
-            return model.encode(input, show_progress_bar=False).tolist()
+            import asyncio
+            import httpx
+            
+            # Sync version of embedding call
+            url = settings.embedding_base_url
+            headers = {
+                "Authorization": f"Bearer {settings.embedding_api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": settings.embedding_model,
+                "input": input,
+            }
+            
+            try:
+                with httpx.Client(timeout=60) as client:
+                    resp = client.post(url, json=payload, headers=headers)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    embeddings = [item["embedding"] for item in data["data"]]
+                    return embeddings
+            except Exception as exc:
+                logger.error("Embedding API error: %s", exc)
+                raise
 
     return _get_chroma().get_or_create_collection(
         name=col_name,
@@ -156,12 +195,61 @@ async def generate(
     collection: str = "",
     top_k: int = 5,
 ) -> dict[str, Any]:
-    """Search + return chunks (no local generation — LLM handles synthesis)."""
+    """Search + call LLM to generate Vietnamese answer."""
+    from langchain_openai import ChatOpenAI
+    from langchain_core.messages import HumanMessage, SystemMessage
+    
     chunks = await search(query=query, collection=collection, top_k=top_k)
-    # Build a simple concatenated answer from chunks (agent will override with LLM)
-    context = "\n\n".join(c["text"] for c in chunks[:3])
+    
+    if not chunks:
+        return {
+            "answer": "Xin lỗi, tôi không tìm thấy thông tin liên quan trong tài liệu.",
+            "chunks": [],
+        }
+    
+    # Build context from top chunks
+    context = "\n\n".join(f"[{i+1}] {c['text']}" for i, c in enumerate(chunks[:3]))
+    
+    # Vietnamese system prompt
+    system_prompt = """Bạn là một trợ lý tư vấn tuyển sinh thạc sĩ chuyên nghiệp. 
+Nhiệm vụ của bạn là trả lời câu hỏi bằng tiếng Việt dựa trên tài liệu được cung cấp.
+
+QUAN TRỌNG:
+- Trả lời HOÀN TOÀN bằng tiếng Việt
+- Chỉ sử dụng thông tin từ tài liệu được cung cấp
+- Nếu không có thông tin, hãy nói "Tôi không tìm thấy thông tin này trong tài liệu"
+- Trả lời ngắn gọn, rõ ràng và chuyên nghiệp
+- Trích dẫn nguồn bằng số [1], [2], [3] khi cần thiết"""
+
+    user_prompt = f"""Dựa trên các tài liệu sau:
+
+{context}
+
+Câu hỏi: {query}
+
+Hãy trả lời bằng tiếng Việt một cách chính xác và đầy đủ."""
+
+    # Call LLM
+    llm = ChatOpenAI(
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
+        model=settings.llm_model,
+        temperature=0,
+        max_tokens=2048,
+    )
+    
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt),
+    ]
+    
+    response = await llm.ainvoke(messages)
+    answer = response.content.strip()
+    
+    logger.info("LLM generated Vietnamese answer for query: %r", query[:60])
+    
     return {
-        "answer": context if context else "No relevant documents found.",
+        "answer": answer,
         "chunks": chunks,
     }
 

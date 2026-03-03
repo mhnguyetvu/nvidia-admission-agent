@@ -1,15 +1,14 @@
-"""RAG service — thin orchestration layer that routes to the active backend.
+"""RAG service — thin orchestration layer for ChromaDB-backed retrieval.
 
-When ``BACKEND=local`` → uses ChromaDB (app.clients.local_chroma)
-When ``BACKEND=nvidia`` → uses NVIDIA RAG HTTP (app.clients.nvidia_rag_http)
+Uses local ChromaDB for both search and generation.
 """
 
 from __future__ import annotations
 
 import logging
-from types import ModuleType
 from typing import Any
 
+from app.clients import local_chroma as client
 from app.config import settings
 from app.schemas import (
     ChatQueryResponse,
@@ -19,15 +18,6 @@ from app.schemas import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _backend() -> ModuleType:
-    """Return the correct client module based on settings.backend."""
-    if settings.backend == "local":
-        from app.clients import local_chroma as client
-    else:
-        from app.clients import nvidia_rag_http as client
-    return client
 
 
 def _build_citations(chunks: list[dict[str, Any]]) -> list[Citation]:
@@ -46,7 +36,6 @@ def _build_citations(chunks: list[dict[str, Any]]) -> list[Citation]:
 
 async def search(query: str, collection: str = "", top_k: int = 5) -> SearchResponse:
     """Run a RAG search and return structured response."""
-    client = _backend()
     col = collection or settings.rag_collection
     raw_chunks = await client.search(query=query, collection=col, top_k=top_k)
     chunks = [
@@ -64,7 +53,6 @@ async def search(query: str, collection: str = "", top_k: int = 5) -> SearchResp
 
 async def chat_query(query: str, collection: str = "", top_k: int = 5) -> ChatQueryResponse:
     """Ask a question through the RAG generate endpoint."""
-    client = _backend()
     col = collection or settings.rag_collection
     result = await client.generate(query=query, collection=col, top_k=top_k)
     citations = _build_citations(result.get("chunks", []))

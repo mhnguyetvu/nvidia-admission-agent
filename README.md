@@ -1,10 +1,8 @@
-# 🎓 NVIDIA Admission Agent
+# 🎓 Admission Agent
 
-Agentic RAG chatbot for university admissions **(Fall 2026-2027)** powered by
-[NVIDIA RAG Blueprint](https://docs.nvidia.com/ai-enterprise/rag-blueprint/).
+Agentic RAG chatbot for university admissions **(Fall 2026-2027)** powered by local ChromaDB.
 
-The gateway calls **external** NVIDIA Blueprint services (rag-server +
-ingestor-server) via HTTP — no blueprint code is embedded.
+The application uses **local ChromaDB** for document retrieval and embeddings — no external servers required.
 
 ---
 
@@ -17,17 +15,17 @@ ingestor-server) via HTTP — no blueprint code is embedded.
             │  HTTP :9000
 ┌───────────▼──────────────────────────────────────────────────┐
 │  FastAPI Gateway  (this repo)                                │
-│  ├─ /api/v1/search         → RAG search                     │
-│  ├─ /api/v1/chat/query     → RAG generate (grounded Q&A)    │
-│  ├─ /api/v1/ingest/file    → Upload doc                     │
+│  ├─ /api/v1/search         → ChromaDB search                │
+│  ├─ /api/v1/chat/query     → ChromaDB RAG + LLM             │
+│  ├─ /api/v1/ingest/file    → Upload doc to ChromaDB         │
 │  ├─ /api/v1/agent/checklist→ LangGraph checklist flow        │
 │  └─ /api/v1/agent/email    → LangGraph email flow            │
-└──┬────────────────────┬──────────────────────────────────────┘
-   │ HTTP               │ HTTP
-┌──▼─────────────┐  ┌───▼──────────────┐
-│  rag-server    │  │  ingestor-server  │
-│  :8081         │  │  :8082            │
-└────────────────┘  └──────────────────┘
+└──┬────────────────────────────────────────────────────────────┘
+   │
+┌──▼──────────────────┐
+│  Local ChromaDB     │
+│  (./chroma_data)    │
+└─────────────────────┘
 ```
 
 ## Quick Start
@@ -35,9 +33,9 @@ ingestor-server) via HTTP — no blueprint code is embedded.
 ### 1. Clone & configure
 
 ```bash
-git clone <repo-url> && cd nvidia-admission-agent
+git clone <repo-url> && cd admission-agent
 cp .env.example .env
-# Edit .env — set RAG_URL, INGEST_URL, LLM_API_KEY, etc.
+# Edit .env — set LLM_API_KEY for agent features (optional)
 ```
 
 ### 2. Install dependencies (uv recommended)
@@ -91,7 +89,7 @@ curl http://localhost:9000/health
 
 ### `POST /api/v1/search`
 
-Return matching chunks with relevance scores.
+Return matching chunks with relevance scores from ChromaDB.
 
 ```bash
 curl -X POST http://localhost:9000/api/v1/search \
@@ -104,7 +102,7 @@ curl -X POST http://localhost:9000/api/v1/search \
 
 ### `POST /api/v1/chat/query`
 
-Grounded Q&A (uses RAG server generate endpoint).
+Grounded Q&A using ChromaDB retrieval + LLM generation.
 
 ```bash
 curl -X POST http://localhost:9000/api/v1/chat/query \
@@ -116,7 +114,7 @@ curl -X POST http://localhost:9000/api/v1/chat/query \
 
 ### `POST /api/v1/ingest/file`
 
-Upload a single file for ingestion.
+Upload a single file for ingestion into ChromaDB.
 
 ```bash
 curl -X POST http://localhost:9000/api/v1/ingest/file \
@@ -214,26 +212,20 @@ curl -X POST http://localhost:9000/api/v1/agent/email \
 
 ## Docker
 
-### Run everything with Docker Compose
+### Run with Docker Compose
 
 ```bash
-cp .env.example .env   # edit with your keys
+cp .env.example .env   # edit with your API key (optional for agent features)
 docker compose up -d --build
 ```
 
-This starts **3 services** on a shared `rag-net` network:
+This starts the **admission-agent** service on a local network with mounted ChromaDB storage:
 
 | Service | Port | Description |
 |---------|------|-------------|
-| `admission-agent` | 9000 | FastAPI gateway (this repo) |
-| `rag-server` | 8081 | NVIDIA RAG Blueprint — search & generate |
-| `ingestor-server` | 8082 | NVIDIA RAG Blueprint — document ingestion |
+| `admission-agent` | 9000 | FastAPI gateway with local ChromaDB |
 
-> **Note:** The `rag-server` and `ingestor-server` images in `docker-compose.yml` are
-> **placeholders**. Replace them with your actual NVIDIA RAG Blueprint images, or remove
-> them if you run the blueprint separately.
-
-### Run only the gateway (blueprint running externally)
+### Run only the gateway (manual ChromaDB)
 
 ```bash
 # Build
@@ -243,8 +235,7 @@ docker build -t admission-agent .
 docker run -d --name admission-agent \
   -p 9000:9000 \
   -v ./data/docs:/app/data/docs:ro \
-  -e RAG_URL=http://YOUR_RAG_HOST:8081 \
-  -e INGEST_URL=http://YOUR_INGEST_HOST:8082 \
+  -v ./chroma_data:/app/chroma_data \
   -e LLM_API_KEY=your-key \
   admission-agent
 ```
@@ -271,6 +262,7 @@ docker run --rm -it \
   -v ./app:/app/app \
   -v ./scripts:/app/scripts \
   -v ./data/docs:/app/data/docs:ro \
+  -v ./chroma_data:/app/chroma_data \
   --env-file .env \
   admission-agent \
   uvicorn app.main:app --reload --host 0.0.0.0 --port 9000
@@ -284,12 +276,11 @@ All settings live in `.env` (see `.env.example`):
 
 | Variable               | Default                              | Description                          |
 |------------------------|--------------------------------------|--------------------------------------|
-| `RAG_URL`              | `http://localhost:8081`              | NVIDIA rag-server base URL           |
-| `INGEST_URL`           | `http://localhost:8082`              | NVIDIA ingestor-server base URL      |
-| `RAG_SEARCH_PATH`      | `/search`                            | Search endpoint path                 |
-| `RAG_GENERATE_PATH`    | `/generate`                          | Generate endpoint path               |
-| `INGEST_DOCUMENTS_PATH`| `/documents`                         | Ingest endpoint path                 |
-| `RAG_COLLECTION`       | `admissions_fall_2026`               | Default collection name              |
+| `RAG_COLLECTION`       | `admissions_fall_2026`               | ChromaDB collection name             |
+| `CHROMA_DIR`           | `./chroma_data`                      | Local ChromaDB storage directory     |
+| `EMBEDDING_MODEL`      | `all-MiniLM-L6-v2`                  | Sentence-transformers embedding model|
+| `CHUNK_SIZE`           | `500`                                | Text chunk size in characters        |
+| `CHUNK_OVERLAP`        | `50`                                 | Character overlap between chunks     |
 | `LLM_BASE_URL`         | `https://integrate.api.nvidia.com/v1`| OpenAI-compatible LLM endpoint       |
 | `LLM_API_KEY`          | *(empty)*                            | API key for agent LLM calls          |
 | `LLM_MODEL`            | `meta/llama-3.1-70b-instruct`       | Model name                           |
@@ -300,24 +291,24 @@ All settings live in `.env` (see `.env.example`):
 ## Repo Structure
 
 ```
-nvidia-admission-agent/
+admission-agent/
 ├─ README.md
 ├─ .env.example
 ├─ pyproject.toml
 ├─ Dockerfile                       ← multi-stage Python 3.12 image
-├─ docker-compose.yml               ← gateway + blueprint stubs
+├─ docker-compose.yml               ← local-only gateway setup
 ├─ .dockerignore
 ├─ data/
 │  └─ docs/                        ← place PDFs here
 ├─ scripts/
 │  ├─ ingest_docs.py               ← batch ingest CLI
-│  └─ healthcheck.py               ← ping upstream servers
+│  └─ healthcheck.py               ← health check endpoint
 └─ app/
    ├─ main.py                      ← FastAPI entry point
    ├─ config.py                    ← pydantic-settings
    ├─ schemas.py                   ← all request/response models
    ├─ clients/
-   │  └─ nvidia_rag_http.py        ← centralised HTTP client
+   │  └─ local_chroma.py           ← ChromaDB RAG backend
    ├─ services/
    │  ├─ rag_service.py            ← search & chat orchestration
    │  └─ agent_service.py          ← LangGraph checklist & email flows

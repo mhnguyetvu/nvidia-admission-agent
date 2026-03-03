@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Batch-ingest all PDFs and Markdown files under ``data/docs/`` into the
-configured backend (local ChromaDB or NVIDIA ingestor-server).
+"""Batch-ingest all PDFs and Markdown files under ``data/docs/`` into local ChromaDB.
 
 Directory convention
 --------------------
@@ -19,7 +18,6 @@ Usage
 from __future__ import annotations
 
 import argparse
-import asyncio
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +25,7 @@ from pathlib import Path
 # Allow running from repo root
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.clients.local_chroma import ingest_file_sync
 from app.config import settings  # noqa: E402
 
 SUPPORTED_EXTENSIONS = {".pdf", ".md"}
@@ -57,17 +56,8 @@ def _extract_metadata(filepath: Path, docs_root: Path) -> dict[str, str]:
     return meta
 
 
-def _get_ingest_fn():
-    """Return the correct sync ingest function based on backend."""
-    if settings.backend == "local":
-        from app.clients.local_chroma import ingest_file_sync
-    else:
-        from app.clients.nvidia_rag_http import ingest_file_sync
-    return ingest_file_sync
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Ingest docs into RAG backend")
+    parser = argparse.ArgumentParser(description="Ingest docs into local ChromaDB")
     parser.add_argument(
         "--dir",
         type=str,
@@ -99,16 +89,12 @@ def main() -> None:
         print(f"No .pdf / .md files found under {docs_root}")
         sys.exit(0)
 
-    print(f"Backend: {settings.backend}")
+    print(f"Backend: Local ChromaDB")
     print(f"Found {len(files)} file(s) under {docs_root}")
     print(f"Target collection: {collection}")
-    if settings.backend == "nvidia":
-        print(f"Ingestor URL: {settings.ingest_url}")
-    else:
-        print(f"ChromaDB dir: {Path(settings.chroma_dir).resolve()}")
+    print(f"ChromaDB dir: {Path(settings.chroma_dir).resolve()}")
     print()
 
-    ingest_fn = _get_ingest_fn()
     success = 0
     failed = 0
 
@@ -121,7 +107,7 @@ def main() -> None:
             continue
 
         try:
-            resp = ingest_fn(
+            resp = ingest_file_sync(
                 file_bytes=f.read_bytes(),
                 filename=f.name,
                 collection=collection,

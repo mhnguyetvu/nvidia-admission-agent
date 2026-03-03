@@ -1,10 +1,7 @@
 # ─────────────────────────────────────────────────────────────────
 # docker compose up -d admission-agent
 #
-# The NVIDIA blueprint services (rag-server, ingestor-server) are
-# shown as stubs below. Replace the image/ports with your actual
-# NVIDIA RAG Blueprint deployment or remove them if you run those
-# separately.
+# Local ChromaDB setup for the admission agent gateway.
 # ─────────────────────────────────────────────────────────────────
 
 services:
@@ -19,48 +16,14 @@ services:
       - "${APP_PORT:-9000}:9000"
     env_file:
       - .env
-    environment:
-      # Override RAG/Ingest URLs to point to Docker service names
-      - RAG_URL=${RAG_URL:-http://rag-server:8081}
-      - INGEST_URL=${INGEST_URL:-http://ingestor-server:8082}
     volumes:
       # Mount local docs so you can ingest from inside the container
       - ./data/docs:/app/data/docs:ro
-    depends_on:
-      rag-server:
-        condition: service_started
-      ingestor-server:
-        condition: service_started
+      # Mount ChromaDB data to persist between containers
+      - ./chroma_data:/app/chroma_data
     networks:
-      - rag-net
-
-  # ── NVIDIA RAG Blueprint: rag-server (placeholder) ──────────
-  # Replace with your real NVIDIA RAG Blueprint image/config.
-  # If you run the blueprint separately, remove this service and
-  # set RAG_URL in .env to point to your external host.
-  rag-server:
-    image: nvcr.io/nvidia/rag-server:latest       # ← replace with actual image
-    container_name: rag-server
-    restart: unless-stopped
-    ports:
-      - "8081:8081"
-    # volumes:
-    #   - rag-data:/data
-    networks:
-      - rag-net
-
-  # ── NVIDIA RAG Blueprint: ingestor-server (placeholder) ─────
-  ingestor-server:
-    image: nvcr.io/nvidia/ingestor-server:latest   # ← replace with actual image
-    container_name: ingestor-server
-    restart: unless-stopped
-    ports:
-      - "8082:8082"
-    # volumes:
-    #   - ingest-data:/data
-    networks:
-      - rag-net
+      - local-net
 
 networks:
-  rag-net:
+  local-net:
     driver: bridge
